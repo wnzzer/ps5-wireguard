@@ -1,5 +1,7 @@
 # WireGuard for jailbroken PS5
 
+[![LINUX DO](https://img.shields.io/badge/LINUX-DO-FFB003?style=flat&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjAgMTIwIj48Y2xpcFBhdGggaWQ9ImMiPjxjaXJjbGUgY3g9IjYwIiBjeT0iNjAiIHI9IjQ3Ii8+PC9jbGlwUGF0aD48Y2lyY2xlIGN4PSI2MCIgY3k9IjYwIiByPSI1MCIgZmlsbD0iI2YwZjBmMCIvPjxnIGNsaXAtcGF0aD0idXJsKCNjKSI+PHJlY3QgeD0iMCIgeT0iMTAiIHdpZHRoPSIxMjAiIGhlaWdodD0iMzAiIGZpbGw9IiMxYzFjMWUiLz48cmVjdCB4PSIwIiB5PSI0MCIgd2lkdGg9IjEyMCIgaGVpZ2h0PSI0MCIgZmlsbD0iI2YwZjBmMCIvPjxyZWN0IHg9IjAiIHk9IjgwIiB3aWR0aD0iMTIwIiBoZWlnaHQ9IjMwIiBmaWxsPSIjZmZiMDAzIi8+PC9nPjwvc3ZnPg==)](https://linux.do)
+
 Puts a jailbroken PS5 on your own [WireGuard](https://www.wireguard.com) network
 as an ordinary peer: no Tailscale account or coordination server, just a
 standard `wg-quick` style config and the WireGuard server you already run
