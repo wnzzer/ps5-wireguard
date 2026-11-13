@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PS5 WireGuard</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--mut:#6b7280;--line:#e5e7eb;--ok:#15803d;--bad:#b91c1c;--warn:#b45309;--acc:#88171a}
+@media (prefers-color-scheme:dark){:root{--bg:#111318;--card:#1b1e25;--fg:#e6e8ec;--mut:#9aa3b2;--line:#2c313b;--ok:#4ade80;--bad:#f87171;--warn:#fbbf24;--acc:#f87171}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:8px 0 16px;display:flex;gap:10px;align-items:center}
+h2{font-size:15px;margin:0 0 10px;color:var(--mut);font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.pill{font-size:12px;padding:2px 9px;border-radius:99px;border:1px solid currentColor}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}.mut{color:var(--mut)}
+code,textarea,pre{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px}.kv>div:nth-child(odd){color:var(--mut)}
+.key{word-break:break-all;user-select:all}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px 6px;border-top:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-weight:500;border-top:0}
+textarea{width:100%;min-height:260px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:10px}
+button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:7px 14px;font-size:14px;cursor:pointer;margin:8px 8px 0 0}
+button.sec{background:transparent;color:var(--fg);border:1px solid var(--line)}
+pre{max-height:260px;overflow:auto;background:var(--bg);padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-all;margin:0}
+.msg{margin-top:8px;font-size:13px}
+.wrap{overflow-x:auto}
+</style>
+</head>
+<body><main>
+<h1>PS5 WireGuard <span id="state" class="pill mut">…</span></h1>
+
+<div class="card">
+  <h2>本机</h2>
+  <div class="kv">
+    <div>公钥</div><div class="key" id="pub">-</div>
+    <div>隧道地址</div><div id="addr">-</div>
+    <div>局域网 IP</div><div id="lan">-</div>
+    <div>入站</div><div id="inbound">-</div>
+    <div>本地转发</div><div id="fwds">-</div>
+    <div>版本</div><div id="ver">-</div>
+  </div>
+  <div id="err" class="msg bad"></div>
+</div>
+
+<div class="card">
+  <h2>对端</h2>
+  <div class="wrap"><table><thead><tr><th>名称 / 公钥</th><th>Endpoint</th><th>最近握手</th><th>收 / 发</th></tr></thead><tbody id="peers"></tbody></table></div>
+</div>
+
+<div class="card">
+  <h2>wg0.conf（wg-quick 格式，私钥不显示；保持 “(hidden, unchanged)” 即沿用原私钥）</h2>
+  <textarea id="conf" spellcheck="false"></textarea>
+  <button onclick="saveConf()">保存并重启隧道</button>
+  <button class="sec" onclick="loadConf()">重新载入</button>
+  <button class="sec" onclick="restart()">重启隧道</button>
+  <button class="sec" onclick="newKey()">生成新密钥对</button>
+  <div id="confMsg" class="msg"></div>
+</div>
+
+<div class="card">
+  <h2>守护进程设置 settings.json</h2>
+  <textarea id="settings" spellcheck="false" style="min-height:200px"></textarea>
+  <button onclick="saveSettings()">保存设置</button>
+  <button class="sec" onclick="loadSettings()">重新载入</button>
+  <button class="sec" onclick="quitDaemon()">停止 WireGuard</button>
+  <div id="setMsg" class="msg"></div>
+  <p class="mut msg">exposeTCP：隧道内访问本机任意 TCP 端口转到 127.0.0.1（blockedTCPPorts 除外）；udpPorts：转发的 UDP 端口（默认 Remote Play + Sunshine）；allowFrom：只允许这些来源（CIDR），空=不限；forwards：<code>{"proto":"tcp","listen":"127.0.0.1:8022","target":"10.8.0.2:22"}</code> 让主机上的应用访问隧道另一端；priority：low/high（下次启动生效）。</p>
+</div>
+
+<div class="card">
+  <h2>日志 <a class="mut" href="/api/log" target="_blank" style="font-weight:400">完整日志</a></h2>
+  <pre id="log"></pre>
+</div>
+</main>
+<script>
+const H={'X-PS5WG':'1'};
+const $=id=>document.getElementById(id);
+const fmtB=n=>n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KiB':n<1073741824?(n/1048576).toFixed(1)+' MiB':(n/1073741824).toFixed(2)+' GiB';
+const ago=(s,now)=>{if(!s)return '从未';const d=now-s;return d<60?d+' 秒前':d<3600?Math.floor(d/60)+' 分钟前':Math.floor(d/3600)+' 小时前'};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function refresh(){
+  try{
+    const s=await (await fetch('/api/status',{cache:'no-store'})).json();
+    const st=$('state');
+    if(!s.running){st.textContent='未运行';st.className='pill bad'}
+    else if(s.connected){st.textContent='已连接';st.className='pill ok'}
+    else{st.textContent='等待握手';st.className='pill warn'}
+    $('pub').textContent=s.publicKey||'-';
+    $('addr').textContent=(s.addresses||[]).join(', ')||'-';
+    $('lan').textContent=s.lanIP;
+    $('inbound').textContent=(s.exposeTCP?'TCP 全部端口':'TCP 关闭')+((s.blockedTCPPorts||[]).length?'（屏蔽 '+s.blockedTCPPorts.join(', ')+'）':'')+'；UDP '+((s.udpPorts||[]).join(', ')||'无');
+    $('fwds').textContent=(s.forwards||[]).join('；')||'无';
+    $('ver').textContent=s.version+'，已运行 '+Math.floor(s.uptime/60)+' 分钟';
+    $('err').textContent=s.error||'';
+    $('peers').innerHTML=(s.peers||[]).map(p=>{
+      const fresh=p.lastHandshake&&s.now-p.lastHandshake<180;
+      return `<tr><td>${esc(p.name)}${p.name?'<br>':''}<code class="key mut">${esc(p.publicKey)}</code><br><span class="mut">AllowedIPs ${esc((p.allowedIPs||[]).join(', '))}</span></td>
+      <td>${esc(p.endpoint||'-')}${p.configuredEndpoint&&p.configuredEndpoint!==p.endpoint?'<br><span class="mut">'+esc(p.configuredEndpoint)+'</span>':''}</td>
+      <td class="${fresh?'ok':'warn'}">${ago(p.lastHandshake,s.now)}</td><td>${fmtB(p.rxBytes)} / ${fmtB(p.txBytes)}</td></tr>`}).join('')||'<tr><td colspan="4" class="mut">无</td></tr>';
+    const lg=$('log');const atEnd=lg.scrollTop+lg.clientHeight>=lg.scrollHeight-8;
+    lg.textContent=(s.logs||[]).join('\n');if(atEnd)lg.scrollTop=lg.scrollHeight;
+  }catch(e){$('state').textContent='无法连接';$('state').className='pill bad'}
+}
+async function post(url,body,msgEl){
+  const r=await fetch(url,{method:'POST',headers:H,body});const t=await r.text();
+  msgEl.className='msg '+(r.ok?'ok':'bad');msgEl.textContent=r.ok?'完成 ✓':t;refresh();return r.ok;
+}
+async function loadConf(){$('conf').value=await (await fetch('/api/config',{cache:'no-store'})).text()}
+async function loadSettings(){$('settings').value=JSON.stringify(await (await fetch('/api/settings',{cache:'no-store'})).json(),null,2)}
+async function saveConf(){$('confMsg').textContent='保存中…';if(await post('/api/config',$('conf').value,$('confMsg')))loadConf()}
+async function saveSettings(){await post('/api/settings',$('settings').value,$('setMsg'))}
+async function restart(){await post('/api/restart','',$('confMsg'))}
+async function newKey(){if(!confirm('生成新密钥后需要在服务端更新本机公钥，确定？'))return;if(await post('/api/newkey','',$('confMsg')))loadConf()}
+async function quitDaemon(){if(!confirm('停止后需重新发送 payload 才能启动，确定？'))return;await post('/api/quit','',$('setMsg'))}
+loadConf();loadSettings();refresh();setInterval(refresh,3000);
+</script>
+</body></html>

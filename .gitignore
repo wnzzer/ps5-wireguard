@@ -1,0 +1,9 @@
+/goroot/
+/toolchain/
+/dl/
+/out/
+/.gocache/
+/.gotmp/
+*.bin
+*.elf
+.DS_Store
